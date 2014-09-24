@@ -25,50 +25,76 @@ def get_po_object_array(filename):
         if not line:
             break
     f.close()
-    po_obj_arr = []
+    po_dict = {
+        'header': None,
+        'content': []
+    }
+
+    i = 0
     for block in str_arr:
         po_obj = {
             'path': [],
             'msgid': [],
             'msgstr': [],
             'etc': [],
-            'line' : []
+            'line': [],
+            'comment': [],
+            'deleted': []
         }
+
         regex = r'(.*)'
         item = 'etc'
         for phrase in block:
             if phrase.find('#: ') == 0:
                 regex = r'#: (.*)'
                 item = 'path'
-            elif phrase.find('msgid ') == 0:
-                regex = r'msgid "(.*)"'
+            if phrase.find('msgid ') == 0:
+                regex = r'msgid (.*)'
                 item = 'msgid'
-            elif phrase.find('msgstr ') == 0:
-                regex = r'msgstr "(.*)"'
+            if phrase.find('msgstr ') == 0:
+                regex = r'msgstr (.*)'
                 item = 'msgstr'
-            elif phrase.find('#, ') == 0:
-                regex = r'#, (.*)'
-                item = 'etc'
-            elif phrase.find('##:') ==0:
+            if phrase.find('#') == 0:
+                regex = r'#(.*)'
+                item = 'comment'
+                if phrase.find('#, ') == 0:
+                    regex = r'#, (.*)'
+                    item = 'etc'
+                if phrase.find('#~ ') == 0:
+                    regex = r'#~ (.*)'
+                    item = 'deleted'
+            if phrase.find('##:') == 0:
                 regex = r'##:(.*)'
                 item = 'line'
             if len(phrase) != 0:
-                s = re.sub(r'"(.*)"', r'\1', re.sub(regex, r'\1', phrase))
+                s = re.sub(regex, r'\1', phrase)
+                if item != 'deleted':
+                    s = re.sub(r'"(.*)"', r'\1', s)
                 po_obj[item].append(s)
-        po_obj_arr.append(po_obj)
-    return po_obj_arr
+
+        if i == 0:
+            po_dict['header'] = po_obj
+            i += 1
+        else:
+            po_dict['content'].append(po_obj)
+    return po_dict
 
 def str_po_obj(po_obj):
     string = '\n'
+    if len(po_obj['comment']) != 0:
+        string += '#' + '\n#'.join(po_obj['comment']) + '\n'
     if len(po_obj['path']) != 0:
         string += '#: ' + '\n#: '.join(po_obj['path']) + '\n'
     if len(po_obj['etc']) != 0:
         string += '#, ' + '\n#, '.join(po_obj['etc']) + '\n'
-    string += 'msgid "' + '"\n"'.join(po_obj['msgid']) + '"\n'
-    string += 'msgstr "' + '"\n"'.join(po_obj['msgstr']) + '"\n'
+    if len(po_obj['deleted']) == 0:
+        string += 'msgid "' + '"\n"'.join(po_obj['msgid']) + '"\n'
+        string += 'msgstr "' + '"\n"'.join(po_obj['msgstr']) + '"\n'
+    else:
+        string += '#~ ' + '\n#~ '.join(po_obj['deleted']) + '\n'
     return string
 
-def ismty_msgstr(po_obj):
+def ismt_msgstr(po_obj):
     if len(po_obj['msgstr']) == 0:
         return True
     else:
@@ -109,7 +135,7 @@ def stat_po_arr(po_arr):
     empty_po_count = 0
     empty_po_obj_arr = []
     for po in po_arr:
-        if ismty_msgstr(po):
+        if ismt_msgstr(po):
             empty_po_count += 1
             empty_po_obj_arr.append(po)
     print 'total po count : ' + str(total_po_count)
@@ -130,11 +156,11 @@ def stat_diff_po_arr(source, target):
         for t_po in target:
             if equals_id(s_po, t_po):
                 duplicate = True
-                if ismty_msgstr(s_po) and ismty_msgstr(t_po):
+                if ismt_msgstr(s_po) and ismt_msgstr(t_po):
                     sameid_emtymsg += 1
-                elif ismty_msgstr(s_po) and not ismty_msgstr(t_po):
+                elif ismt_msgstr(s_po) and not ismt_msgstr(t_po):
                     sameid_semtymsg += 1
-                elif not ismty_msgstr(s_po) and ismty_msgstr(t_po):
+                elif not ismt_msgstr(s_po) and ismt_msgstr(t_po):
                     sameid_temtymsg += 1
                 else:
                     if equals_str(s_po, t_po):
@@ -162,18 +188,21 @@ else:
         source = get_po_object_array(sys.argv[1])
         target = get_po_object_array(sys.argv[2])
         print "# source po stat : " + sys.argv[1]
-        stat_po_arr(source)
+        stat_po_arr(source['content'])
         print "\n# target po stat : " + sys.argv[2]
-        stat_po_arr(target)
+        stat_po_arr(target['content'])
         f = open(sys.argv[3], 'w')
         print "\n# po diff stat"
-        stat_diff_po_arr(source, target)
+        stat_diff_po_arr(source['content'], target['content'])
         print "\n# union po stat"
-        union = union_po_arr(source, target)
+        union = union_po_arr(source['content'], target['content'])
         stat_po_arr(union)
 
+        f.write(str_po_obj(source['header']))
         for po in union:
+            # f.write(str(i))
             f.write(str_po_obj(po))
+            # i = i + 1
         f.close()
     except Exception as e:
         print e
